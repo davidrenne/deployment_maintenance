@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html>
 <head>
   <meta charset='utf-8'>
@@ -28,6 +28,7 @@
     hr { border: 0; width: 80%; border-bottom: 1px solid #aaa}
     .footer { text-align:center; padding-top:30px; font-style: italic; }
   </style>
+  <style type="text/css">ol{margin:0;padding:0}p{margin:0}.c3{padding-left:0pt;direction:ltr;margin-left:72pt}.c4{padding-left:0pt;direction:ltr;margin-left:36pt}.c6{width:468pt;background-color:#ffffff;padding:72pt 72pt 72pt 72pt}.c1{list-style-type:circle;margin:0;padding:0}.c5{list-style-type:disc;margin:0;padding:0}.c0{font-size:10pt;font-family:Trebuchet MS}.c2{height:11pt;direction:ltr}.c7{direction:ltr}body{color:#000000;font-size:11pt;font-family:Arial}h1{padding-top:24pt;color:#000000;font-size:24pt;font-family:Arial;font-weight:bold;padding-bottom:6pt}h2{padding-top:18pt;color:#000000;font-size:18pt;font-family:Arial;font-weight:bold;padding-bottom:4pt}h3{padding-top:14pt;color:#000000;font-size:14pt;font-family:Arial;font-weight:bold;padding-bottom:4pt}h4{padding-top:12pt;color:#000000;font-size:12pt;font-family:Arial;font-weight:bold;padding-bottom:2pt}h5{padding-top:11pt;color:#000000;font-size:11pt;font-family:Arial;font-weight:bold;padding-bottom:2pt}h6{padding-top:10pt;color:#000000;font-size:10pt;font-family:Arial;font-weight:bold;padding-bottom:2pt}</style>
 </head>
 
 <body>
@@ -46,11 +47,116 @@
       <span class="small">by <a href="http://github.com/davidrenne">davidrenne</a></span></h1>
 
     <div class="description">
-      test
+      A unique SVN, mysql and php deployment utility, for those businesses not converted to git yet.  See below for features.
     </div>
+	
+    <p class="c7"><span class="c0">This deployment utility allows you
+    to:</span></p>
+   
+    <p class="c7"><span class="c0">&nbsp;</span></p>
+   
+    <ol class="c5" start="1">
+    <li class="c4"><span class="c0">Abstract multiple database schemas into
+    &ldquo;deployable regions&rdquo; in order to ease sending up code and database script
+    patches</span></li>
+    </ol>
+   
+    <ol class="c1" start="1">
+    <li class="c3"><span class="c0">Also allows you to select multiple custom
+    databases</span></li>
+    </ol>
+   
+    <ol class="c5" start="2">
+    <li class="c4"><span class="c0">Hooks into multiple SVN repositories and branches to
+    allow you to create code release packages</span></li>
+    </ol>
+   
+    <ol class="c1" start="1">
+    <li class="c3"><span class="c0">Deletes, adds folders and modifies files into your
+    region paths</span></li>
+   
+    <li class="c3"><span class="c0">Parses checkin messages to relate to project
+    Numbers</span></li>
+   
+    <li class="c3"><span class="c0">Organize file ordering for release</span></li>
+   
+    <li class="c3"><span class="c0">Control which branches of code can ONLY or can NEVER
+    go into a region</span></li>
+   
+    <li class="c3"><span class="c0">Warns you of certain matches in your code you are
+    about to release</span></li>
+   
+    <li class="c3"><span class="c0">Checks for PHP parse errors</span></li>
+   
+    <li class="c3"><span class="c0">Creates a relationship between projects and blocks of
+    code impacting the source and allows you to tag and organize blocks of code for
+    testing purposes</span></li>
+   
+    <li class="c3"><span class="c0">Links your projects/tickets to any ticketing system
+    URL</span></li>
+   
+    <li class="c3"><span class="c0">Allows you to rollback a package from any
+    region</span></li>
+   
+    <li class="c3"><span class="c0">Peer review OLD/NEW and visual HTML of
+    differences</span></li>
+   
+    <li class="c3"><span class="c0">Notifies production support and developers when all
+    the code has been pushed</span></li>
+   
+    <li class="c3"><span class="c0">Emails off hourly report from multiple branches of
+    changes</span></li>
+   
+    <li class="c3"><span class="c0">Keeps track of developers&rsquo; time by project
+    basis (if project ID checked into each checkin message)</span></li>
+    </ol>
+   
+    <ol class="c5" start="3">
+    <li class="c4"><span class="c0">Authenticates multiple developers</span></li>
+   
+    <li class="c4"><span class="c0">Supports transactions, backing up tables and
+    notifications in a custom SQL format</span></li>
+    </ol>
+   
+    <ol class="c1" start="1">
+    <li class="c3"><span class="c0">Reports on execution time and errors for each
+    revision</span></li>
+    </ol>
+   
+    <ol class="c5" start="5">
+    <li class="c4"><span class="c0">Allows you to report and build custom output reports
+    on multiple databases with the same schema in your regions listing</span></li>
+    </ol>
+   
+    <ol class="c1" start="1">
+    <li class="c3"><span class="c0">Keeps track of all your SQL history to restore and
+    reuse</span></li>
+   
+    <li class="c3"><span class="c0">Combines the results from multiple databases into a
+    single CSV file (even outputs affected counts on updates into a file across multiple
+    databases)</span></li>
+   
+    <li class="c3"><span class="c0">Allows you to add various data monitors that run once
+    an hour</span></li>
+   
+    <li class="c3"><span class="c0">Send Reports VIA URL to multiple parties</span></li>
+   
+    <li class="c3"><span class="c0">Optionally polls MYSQL threads if you are thrashing
+    your server with too many queries it will throttle</span></li>
+   
+    <li class="c3"><span class="c0">Click a link to save and backup all the data into a
+    permanent static HTML page</span></li>
+   
+    <li class="c3"><span class="c0">Reads from SLAVE server and WRITES to master
+    server</span></li>
+    </ol>
+   
+    <p class="c2"></p>
+   
+    <h2>Contact</h2>
 
-    <p><h1>test</h1></p><h2>Contact</h2>
-<p> (david_renne@yahoo.com)<br/>      </p>
+<p> (david_renne@yahoo.com)
+<br/>      </p>
 
 
     <h2>Download</h2>
@@ -59,17 +165,19 @@
       <a href="http://github.com/davidrenne/deployment_maintenance/zipball/master">zip</a> or
       <a href="http://github.com/davidrenne/deployment_maintenance/tarball/master">tar</a> formats.
     </p>
+
     <p>You can also clone the project with <a href="http://git-scm.com">Git</a>
       by running:
-      <pre>$ git clone git://github.com/davidrenne/deployment_maintenance</pre>
+    <pre>$ git clone git://github.com/davidrenne/deployment_maintenance</pre>
     </p>
 
     <div class="footer">
       get the source code on GitHub : <a href="http://github.com/davidrenne/deployment_maintenance">davidrenne/deployment_maintenance</a>
+
     </div>
 
   </div>
 
-  
+ 
 </body>
 </html>
