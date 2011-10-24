@@ -1,18 +1,4 @@
 <?php
-
-/*
-   setup:
-      create 3 directories
-      inbound
-      archive
-      database_backups
-      svndeploy
-      chmod 777 inbound and svndeploy folder
-
-      or run this
-      mkdir inbound && mkdir archive && mkdir database_backups && mkdir svndeploy && chmod 777 inbound && chmod 777 svndeploy
- */
-
 session_start();
 ini_set('session.gc_maxlifetime', 30*60);
 header ("Cache-control: private");
