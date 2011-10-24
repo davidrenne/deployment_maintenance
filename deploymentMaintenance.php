@@ -148,6 +148,7 @@ class DeploymentMaintenance
    {
       $db = $this->maintenance_database;
       $this->current_database = $this->maintenance_database;
+      $success = true;
       if ($db != "")
       {
          if (!$this->server['mysql']['connection'])
@@ -160,18 +161,23 @@ class DeploymentMaintenance
                      $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
                      if (!$this->server['mysql']['connection'])
                      {
-                        die('Cannot connect to mysql:'.$vals['server']);
+                        $success = false;
                      }
                      break;
                }
             }
          }
 
-         if (mysql_select_db($db,$this->server['mysql']['connection']))
+         if (!mysql_select_db($db,$this->server['mysql']['connection']))
          {
-
+            $success = false;
          }
       }
+      else
+      {
+         $success = false;
+      }
+      return $success;
    }
    /*
     * @method void getDeploymentRegions()
@@ -1451,7 +1457,6 @@ class DeploymentMaintenance
                      $output .= ($hideData == 0)  ? "<th>".implode("</th><th>",$header)."</th>" : "";
                   }
 
-                  //$outputCSV .= urldecode($trackingNumber).",";
 
 
                   if ($exportCSVFlag == 1)

@@ -215,23 +215,6 @@ ALTER TABLE `{$dataObj->maintenance_database}`.`{$dataObj->table_names['checkins
 
 USE `{$dataObj->maintenance_database}`;
 
-;;
-
-
-
-CREATE OR REPLACE VIEW `{$dataObj->view_names['test_prod']}` AS
-SELECT
-   'PROD RELEASES' as release_type,
-   v1.*
-FROM
-   clients_weekly_production_releases v1
-UNION ALL
-SELECT
-   'TEST RELEASES' as release_type,
-   v2.*
-FROM
-   clients_weekly_development_efforts v2
-
 
 ;;
 
@@ -290,6 +273,23 @@ WHERE
 
 ;;
 
+
+
+CREATE OR REPLACE VIEW `{$dataObj->view_names['test_prod']}` AS
+SELECT
+   'PROD RELEASES' as release_type,
+   v1.*
+FROM
+   `{$dataObj->view_names['prod_releases']}` v1
+UNION ALL
+SELECT
+   'TEST RELEASES' as release_type,
+   v2.*
+FROM
+   `{$dataObj->view_names['test_releases']}` v2
+
+
+;;
 
 CREATE OR REPLACE VIEW `{$dataObj->view_names['testing_list']}` AS
 SELECT
