@@ -1,4 +1,5 @@
 <?php
+
 session_start();
 ini_set('session.gc_maxlifetime', 30*60);
 header ("Cache-control: private");
