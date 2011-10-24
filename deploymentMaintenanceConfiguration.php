@@ -168,5 +168,11 @@ $dataObj->menu_queries         = array(
                                                 'Dev Minutes'       => urlencode('SELECT '.str_replace('<!--CUSTOM-->','',$dataObj->view_actions).' a.* FROM '.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes']).' a&lookup_mapping_columns[project_id]=project_id&lookup_mapping_table[project_id]='.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes'].'&lookup_mapping_columns[developer]=developer&lookup_mapping_table[developer]='.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes'].'&lookup_mapping_columns[date_of_development]=date_of_development&lookup_mapping_table[date_of_development]='.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes'].'&lookup_mapping_columns[week_of_year]=week_of_year&lookup_mapping_table[week_of_year]='.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes'].'&lookup_mapping_columns[project_status]=project_status&lookup_mapping_table[project_status]='.$dataObj->maintenance_database.'.'.$dataObj->view_names['project_minutes'].'&lookup_mapping_columns[revisions]=revision&lookup_mapping_table[revisions]='.$dataObj->maintenance_database.'.'.$dataObj->table_names['blocks_affected'],
                                       );
 
+
+// -- use in a case of calling pages where you want someone to paste in a CSV or other input that you want to pass to a canned query below
+$dataObj->predefined_queries  = array(
+                                       "XXXXXXX"=>"SELECT * FROM XXXXXXX WHERE XXXXXXX IN (<--INPUT-->)",
+                                     );
+
 $dataObj->configure();
 ?>

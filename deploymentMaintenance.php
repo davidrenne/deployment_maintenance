@@ -1304,19 +1304,15 @@ class DeploymentMaintenance
          {
             $sql = substr(trim($sql),0,-1);
          }
-         switch ($_REQUEST['export_csv_type'])
+
+         $exportType = $_REQUEST['export_csv_type'];
+         if (array_key_exists($exportType,$this->predefined_queries))
          {
-            case 'ORDERS':
-                  $sqls[] = "SELECT * FROM orders WHERE orders_id IN (".$sql.")";
-               break;
-            case 'ORDER_HISTORY':
-                  $sqls[] = "SELECT * FROM orders_history WHERE orders_id IN (".$sql.")";
-               break;
-            case 'DECLINE_ORDERS':
-                  $sqls[] = "UPDATE orders set orders_status = 7 WHERE orders_id IN (".$sql.")";
-               break;
-            default:
-               die("SELECT AN EXPORT TYPE");
+            $sqls[] = str_replace("<--INPUT-->","",$this->predefined_queries[$exportType]);
+         }
+         else
+         {
+            die("SELECT AN EXPORT TYPE");
          }
       }
 
