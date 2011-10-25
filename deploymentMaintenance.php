@@ -148,9 +148,10 @@ class DeploymentMaintenance
    {
       $db = $this->maintenance_database;
       $this->current_database = $this->maintenance_database;
+      $success = true;
       if ($db != "")
       {
-         if (!$this->server['mysql']['connection'])
+         if (! is_resource($this->server['mysql']['connection']) )
          {
             foreach ($this->server as $type=>$vals)
             {
@@ -160,18 +161,23 @@ class DeploymentMaintenance
                      $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
                      if (!$this->server['mysql']['connection'])
                      {
-                        die('Cannot connect to mysql:'.$vals['server']);
+                        $success = false;
                      }
                      break;
                }
             }
          }
 
-         if (mysql_select_db($db,$this->server['mysql']['connection']))
+         if (!mysql_select_db($db,$this->server['mysql']['connection']))
          {
-
+            $success = false;
          }
       }
+      else
+      {
+         $success = false;
+      }
+      return $success;
    }
    /*
     * @method void getDeploymentRegions()
@@ -1298,19 +1304,15 @@ class DeploymentMaintenance
          {
             $sql = substr(trim($sql),0,-1);
          }
-         switch ($_REQUEST['export_csv_type'])
+
+         $exportType = $_REQUEST['export_csv_type'];
+         if (array_key_exists($exportType,$this->predefined_queries))
          {
-            case 'ORDERS':
-                  $sqls[] = "SELECT * FROM orders WHERE orders_id IN (".$sql.")";
-               break;
-            case 'ORDER_HISTORY':
-                  $sqls[] = "SELECT * FROM orders_history WHERE orders_id IN (".$sql.")";
-               break;
-            case 'DECLINE_ORDERS':
-                  $sqls[] = "UPDATE orders set orders_status = 7 WHERE orders_id IN (".$sql.")";
-               break;
-            default:
-               die("SELECT AN EXPORT TYPE");
+            $sqls[] = str_replace("<!--INPUT-->",$sql,$this->predefined_queries[$exportType]);
+         }
+         else
+         {
+            die("SELECT AN EXPORT TYPE");
          }
       }
 
@@ -1451,7 +1453,6 @@ class DeploymentMaintenance
                      $output .= ($hideData == 0)  ? "<th>".implode("</th><th>",$header)."</th>" : "";
                   }
 
-                  //$outputCSV .= urldecode($trackingNumber).",";
 
 
                   if ($exportCSVFlag == 1)
