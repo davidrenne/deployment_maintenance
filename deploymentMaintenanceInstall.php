@@ -8,10 +8,11 @@ echo <<<EOD
 --      archive
 --      database_backups
 --      svndeploy
---    chmod 777 inbound and svndeploy folder
+--      chmod 777 inbound and svndeploy folder
 
+--      create a file debug.log and chmod 777 that file
 --      or run this
---      mkdir inbound && mkdir archive && mkdir database_backups && mkdir svndeploy && chmod 777 inbound && chmod 777 svndeploy
+--      mkdir inbound && mkdir archive && mkdir database_backups && mkdir svndeploy && chmod 777 inbound && chmod 777 svndeploy && echo '' > debug.log && chmod 777 debug.log
 
 --     Next install this in your mysql database
 
