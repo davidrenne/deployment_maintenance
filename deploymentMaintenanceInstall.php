@@ -1,7 +1,6 @@
 <?php
 
 echo <<<EOD
-
 <pre>
 --      create 3 directories
 --      inbound
@@ -15,6 +14,8 @@ echo <<<EOD
 --      mkdir inbound && mkdir archive && mkdir database_backups && mkdir svndeploy && chmod 777 inbound && chmod 777 svndeploy && echo '' > debug.log && chmod 777 debug.log
 
 --     Next install this in your mysql database
+
+
 
 CREATE DATABASE `{$dataObj->maintenance_database}`;
 

@@ -83,7 +83,6 @@ class DeploymentMaintenance
       {
          $this->web_notify['support'] = array($this->web_notify['support']);
       }
-
    }
 
    function diff_microtime($mt_old,$mt_new)
@@ -179,6 +178,7 @@ class DeploymentMaintenance
       }
       return $success;
    }
+   
    /*
     * @method void getDeploymentRegions()
     */
