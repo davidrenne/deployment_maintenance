@@ -22,6 +22,7 @@ class DeploymentMaintenance
       $this->pid = getmypid();
       $this->pid_fle = $this->wd."deployment_maintenance.pid";
       $this->person_file = $this->wd."deployment_maintenance_person.pid";
+      
       if (file_exists($this->pid_fle) && !empty($_REQUEST['svnrev']))
       {
          die('DeploymentMaintenance is currently processing a request from <strong>'.file_get_contents($this->person_file).'\'s</strong> last request.  Please repost you request in a second.');
