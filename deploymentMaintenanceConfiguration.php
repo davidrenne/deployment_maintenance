@@ -31,6 +31,9 @@ else
 /*$dataObj->web_notify['developers'] = "xxxxx@xxxxx.com";
 $dataObj->web_notify['support'] = array("xxxxx@xxxxx.com");*/
 
+// -- git location (not working yet, this is why this feature branch was created)
+$dataObj->git_root              = 'http://github.com/username/';
+
 // -- svn location
 $dataObj->svn_root              = 'http://mysvnserver/myroot/';
 
