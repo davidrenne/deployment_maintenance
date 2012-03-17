@@ -22,7 +22,6 @@ class DeploymentMaintenance
       $this->pid = getmypid();
       $this->pid_fle = $this->wd."deployment_maintenance.pid";
       $this->person_file = $this->wd."deployment_maintenance_person.pid";
-      
       if (file_exists($this->pid_fle) && !empty($_REQUEST['svnrev']))
       {
          die('DeploymentMaintenance is currently processing a request from <strong>'.file_get_contents($this->person_file).'\'s</strong> last request.  Please repost you request in a second.');
@@ -84,6 +83,13 @@ class DeploymentMaintenance
       {
          $this->web_notify['support'] = array($this->web_notify['support']);
       }
+
+      if ($this->is_fast_cgi)
+      {
+         // -- long running threads can cause fast CGI to time out and thus provide no HTML results.  This is a pain in the ass.  But if you use -flush in fast CGI config.  KeepAlive() will continuously echo ' '; and flush the buffer to keep the thread from going into a black hole
+         ini_set('output_buffering',        'Off');
+         ini_set('zlib.output_compression', 'Off');
+      }
    }
 
    function diff_microtime($mt_old,$mt_new)
@@ -130,7 +136,7 @@ class DeploymentMaintenance
       $db = $this->maintenance_database;
       if ($db != "")
       {
-         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password']);
+         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
          if (mysql_select_db($db,$this->server['mysql']['connection']))
          {
             $loginQuery = "select * from ".$this->maintenance_database.".".$this->table_names['users']." where username = '$username' and password ='".md5($password)."';";
@@ -158,7 +164,7 @@ class DeploymentMaintenance
                switch ($type)
                {
                   case 'mysql' :
-                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
+                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password'], true, $this->server['mysql']['client_flags']);
                      if (!$this->server['mysql']['connection'])
                      {
                         $success = false;
@@ -179,7 +185,32 @@ class DeploymentMaintenance
       }
       return $success;
    }
-   
+
+   function KeepAlive()
+   {
+      if ($this->is_fast_cgi)
+      {
+         echo ' ';
+         while (@ob_end_flush());
+         flush();
+      }
+   }
+
+   function isWritableQuery($q)
+   {
+      //[9:41:10 AM] Trevor Hofstad-Parkhill: /(--\s+[^\n\r]+)[\n\r]+(.*)/s
+      $q = trim($q);
+      list($firstWord) = explode(' ',$q);
+      if (stristr($firstWord,'create') !== false || stristr($firstWord,'truncate') !== false || stristr($firstWord,'alter') !== false  || stristr($firstWord,'insert') !== false || stristr($firstWord,'update') !== false || stristr($firstWord,'delete') !== false || stristr($firstWord,'drop') !== false || stristr($firstWord,'call') !== false)
+      {
+         return true;
+      }
+      else
+      {
+         return false;
+      }
+   }
+
    /*
     * @method void getDeploymentRegions()
     */
@@ -207,7 +238,7 @@ class DeploymentMaintenance
                switch ($type)
                {
                   case 'mysql' :
-                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
+                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password'], true, $this->server['mysql']['client_flags']);
                      if (!$this->server['mysql']['connection'])
                      {
                         die('Cannot connect to mysql:'.$vals['server']);
@@ -384,7 +415,7 @@ class DeploymentMaintenance
                switch ($type)
                {
                   case 'mysql' :
-                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
+                     $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password'], true, $this->server['mysql']['client_flags']);
                      if (!$this->server['mysql']['connection'])
                      {
                         die('Cannot connect to mysql:'.$vals['server']);
@@ -429,7 +460,8 @@ class DeploymentMaintenance
       switch($this->special_setup)
       {
          case "setup1":
-            return "<tr class=\"deployment\"><td>Custom SVN Release:</td><td>(llc_app):<input type='checkbox' name='custom_flag' id='custom_flag'/></td></tr>";
+            //return "<tr class=\"deployment\"><td>Custom SVN Release:</td><td>:<input type='checkbox' name='custom_flag' id='custom_flag'/></td></tr>";
+            return "";
             break;
          default:
             return "";
@@ -441,7 +473,7 @@ class DeploymentMaintenance
       $db = $this->maintenance_database;
       if ($db != "")
       {
-         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password']);
+         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
          if (mysql_select_db($db,$this->server['mysql']['connection']))
          {
             $q = "select MAX(id) as id from ".$this->maintenance_database.".".$this->table_names['clients_updates']." where deployment_project = '{$projectName}'";
@@ -472,7 +504,7 @@ class DeploymentMaintenance
       $db = $this->maintenance_database;
       if ($db != "")
       {
-         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password']);
+         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
          if (mysql_select_db($db,$this->server['mysql']['connection']))
          {
             $q = "select MAX(id) as id from ".$this->maintenance_database.".".$this->table_names['clients_updates']." where deployment_username = '{$_SESSION['username']}' AND deployment_project != ''";
@@ -1022,8 +1054,11 @@ class DeploymentMaintenance
             {
                $deploymentRow->deployment_type = "ALL DEPLOYMENT REGIONS";
             }
-            if ($deploymentRow->id > 0)
+
+            //only send emails which dont have !! as part of the project message - yes dumb, but whatever!!
+            if ($deploymentRow->id > 0 && !stristr($deploymentRow->deployment_project,$this->release_email_skip_string))
             {
+               $url = parse_url($this->base_url);
                $name = (array_key_exists('support',$this->web_notify)) ? implode(", ",$this->web_notify['support']).',<br /><br />' : '';
                $filesAffected = '';
                foreach(explode("\n",$deploymentRow->deployment_files) as $file)
@@ -1076,22 +1111,26 @@ class DeploymentMaintenance
                   ";
                }
                $notify   = array_merge($this->web_notify['developers'] ,$this->web_notify['support'] );
-               $from     = "deployment_maintenance@".$_SERVER['HTTP_HOST'];
+               $from     = "deployment_maintenance@".$url['host'];
             }
-            else
+            elseif (!stristr($deploymentRow->deployment_project,$this->release_email_skip_string))
             {
                $template = "Error pulling records.  No deployment email sent to support email.<br /><br />Query 1:$q1<br /><br />Query 2:$q2";
                $subject  = "Error finding deploymentMaintenance record(s) no email sent";
                $notify   = $this->web_notify['developers'];
-               $from     = "deployment_maintenance@".$_SERVER['HTTP_HOST'];
+               $from     = "deployment_maintenance@".$url['host'];
             }
 
-            $email = new EmailSender( $template );
-            $email->set_from( $from );
-            $email->set_content_type( 'text/html' );
-            $email->set_to( $notify );
-            $email->set_subject( $subject );
-            $ret = $email->sendEmail();
+            if (!stristr($deploymentRow->deployment_project,$this->release_email_skip_string))
+            {
+               $email = new EmailSender( $template );
+               $email->set_from( $from );
+               $email->set_replyTo($from,$from);
+               $email->set_content_type( 'text/html' );
+               $email->set_to( $notify );
+               $email->set_subject( $subject );
+               $ret = $email->sendEmail();
+            }
          }
       }
    }
@@ -1237,7 +1276,16 @@ class DeploymentMaintenance
       return $return;
    }
 
-   function queryDeploymentRegions($sql,$hideData=0,$exportCSVFlag=0,$combineResultsFlag=1,$separateData=0)
+
+   function SetMySQLConnectionPreferences()
+   {
+      foreach ($this->mysql_session_preferences as $pref)
+      {
+         mysql_query('SET '.$pref.';',$this->server['mysql']['connection']);
+      }
+   }
+
+   function queryDeploymentRegions($sql,$hideData=0,$exportCSVFlag=0,$combineResultsFlag=1,$separateData=0,$cmdLine=0)
    {
       if (isset($_REQUEST['saveHTML']))
       {
@@ -1282,22 +1330,6 @@ class DeploymentMaintenance
             $sqls[] = $sql;
          }
 
-         foreach ($sqls as $id=>$theQuery)
-         {
-            if (stristr($theQuery,';') && !stristr($theQuery,'procedure') && !stristr($theQuery,'trigger') && !stristr($theQuery,'function'))
-            {
-               unset($sqls[$id]);
-               $queries = explode('\n;',$theQuery);
-               foreach ($queries as $q)
-               {
-                  $q = trim($q);
-                  if (!empty($q))
-                  {
-                     $sqls[] = $q.';';
-                  }
-               }
-            }
-         }
       }
       else
       {
@@ -1321,7 +1353,7 @@ class DeploymentMaintenance
       $queryType       = array();
       foreach ($sqls as $sql)
       {
-         if ((stristr($sql,'create') !== false || stristr($sql,'truncate') !== false || stristr($sql,'alter') !== false  || stristr($sql,'insert') !== false || stristr($sql,'update') !== false || stristr($sql,'delete') !== false || stristr($sql,'drop') !== false || stristr($sql,'call') !== false || stristr($sql,'set') !== false))
+         if ($this->isWritableQuery($sql))
          {
             // -- if update/add use main server
             $isWritableQuery = true;
@@ -1334,6 +1366,7 @@ class DeploymentMaintenance
             $queryType[$sql] = 'read';
          }
       }
+
       // -- uncomment for all queries to master server
       if ($isWritableQuery || $this->sendToMaster || empty($this->server['mysql']['use_slave']))
       {
@@ -1344,20 +1377,43 @@ class DeploymentMaintenance
          $server = $this->server['mysql']['use_slave'];
       }
 
-      $this->server['mysql']['connection'] = mysql_connect($server,$this->server['mysql']['username'],$this->server['mysql']['password']);
-      $this->getDeploymentRegions();
+      if (!$isWritableQuery)
+      {
+         // -- reads will check routing rules to see if there are tables exclusive to particular server
 
-      // -- large group concat support configuration
-      $this->current_query = 'SET group_concat_max_len=4294967295';
-      $results = $this->runGenericQuery();
-      $this->current_query = 'SET max_allowed_packet=1073741824';
-      $results = $this->runGenericQuery();
+         foreach ($this->routing_rules['master'] as $search)
+         {
+            foreach ($sqls as $sql)
+            {
+               if (stristr($sql,$search))
+               {
+                  $server = $this->server['mysql']['server'];
+                  break;
+               }
+            }
+         }
+
+         foreach ($this->routing_rules['slave'] as $search)
+         {
+            foreach ($sqls as $sql)
+            {
+               if (stristr($sql,$search))
+               {
+                  $server = $this->server['mysql']['use_slave'];
+                  break;
+               }
+            }
+         }
+      }
+
+      $this->server['mysql']['connection'] = mysql_connect($server,$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
+      $this->getDeploymentRegions();
 
       $hasShownAlert = false;
       $countAllDatabases = count($this->current_databases);
       $output = $this->startDefaultHeader()."</head><body>";
 
-      foreach ($sqls as $sql)
+      foreach ($sqls as $kSql=>$sql)
       {
          if (file_exists($this->wd."archive/".md5($sql)."_all.csv"))
          {
@@ -1366,279 +1422,377 @@ class DeploymentMaintenance
          system("rm ".$this->wd."archive/".md5($sql)."*");
       }
 
+      if ( $cmdLine && $isWritableQuery )
+      {
+         $cmdLineScript .= "SET low_priority_updates=1;\n\n";
+      }
+
       foreach($this->current_databases as $k=>$region)
       {
+         $this->KeepAlive();
          $currentDatabaseCount++;
          $output .= "<table border='1'><tr>";
+         if ( $cmdLine )
+         {
+            $hasSchema = false;
+            $sqlTemp = $sqls;
+            foreach ($sqls as $kSql=>$sql)
+            {
+               if (stristr($sql,"<SCHEMA>"))
+               {
+                  $hasSchema = true;
+                  $sqlTemp[$kSql] = str_replace("<SCHEMA>",$region,$sql);
+               }
+            }
+            if (!$hasSchema)
+            {
+               $cmdLineScript .= "\n\n;;\n\nUSE $region;\n\n;;\n\n";
+            }
+            else
+            {
+               $cmdLineScript .= "\n\n;;\n\n";
+            }
+            $cmdLineScript .= implode("\n\n;;\n\n",$sqlTemp);
+         }
 
          $htmlFile = md5(implode('',$sqls));
          $this->DeleteFile($this->wd."svndeploy/$htmlFile.html");
-         foreach ($sqls as $sql)
+
+         if ( !$cmdLine )
          {
-            $allCnts = 0;
-            $db = $this->maintenance_database;
-            $this->current_query = $sql;
-            $this->current_database = $region;
-            $results = $this->runGenericQuery();
-            $numrows = mysql_numrows($results);
-            $isCountQuery = false;
-            if ($numrows == 1 && stristr($sql,'count(') && !stristr($sql,'group') && !stristr($sql,'by'))
+            foreach ($sqls as $sql)
             {
-               $isCountQuery = true;
-               // -- running a select count for totals use value of row
-               $row = mysql_fetch_array($results);
-               $numrows = $row[0];
-               mysql_data_seek($results,0);
-            }
-            $this->balanceDiskLoad();
-            if ($numrows)
-            {
-               $counts[$region] = $numrows;
-               $numRowsHTML = "(#$numrows rows)";
-            }
-            else
-            {
-               if ($this->num_affected > 0)
+               if (!$handleAll = fopen($this->wd."archive/".md5($sql)."_all.csv", 'a'))
                {
-                  $this->FileLogger("Num affected:".$this->num_affected);
-                  $counts[$region] = $this->num_affected;
-                  $numRowsHTML = $this->affected_html;
+                  echo "Cannot open file (_all file)";
+                  exit;
+               }
+               if ($separateData && !$handleRegion = fopen($this->wd."archive/".md5($sql)."_".$region.".csv", 'a'))
+               {
+                  echo "Cannot open file ($region)";
+                  exit;
+               }
+
+               $this->KeepAlive();
+               $allCnts = 0;
+               $db = $this->maintenance_database;
+               $this->current_query = $sql;
+               $this->current_database = $region;
+
+               $this->SetMySQLConnectionPreferences();
+
+               $this->FileLogger("Running Query in $region $this->current_query");
+               $results = $this->runGenericQuery();
+
+               $numrows = mysql_numrows($results);
+               $isCountQuery = false;
+               if ($numrows == 1 && stristr($sql,'count(') && !stristr($sql,'group') && !stristr($sql,'by'))
+               {
+                  $isCountQuery = true;
+                  // -- running a select count for totals use value of row
+                  $row = mysql_fetch_array($results);
+                  $numrows = $row[0];
+                  mysql_data_seek($results,0);
+               }
+               $this->balanceDiskLoad();
+               if ($numrows)
+               {
+                  $counts[$region] = $numrows;
+                  $numRowsHTML = "(#$numrows rows)";
                }
                else
                {
-                  $counts[$region] = 0;
-                  $numRowsHTML = "";
+                  if ($this->num_affected > 0)
+                  {
+                     $this->FileLogger("Num affected:".$this->num_affected);
+                     $counts[$region] = $this->num_affected;
+                     $numRowsHTML = $this->affected_html;
+                  }
+                  else
+                  {
+                     $counts[$region] = 0;
+                     $numRowsHTML = "";
+                  }
                }
-            }
 
-            if($currentDatabaseCount == 1 && $queryType[$sql] == 'write' && $combineResultsFlag)
-            {
-               file_put_contents($this->wd."archive/".md5($sql)."_all.csv","SQL:,".str_replace(array("\n","\r",","),array('','','`'),$sql).",\r\nDatabase,Rows Updated\r\n",FILE_APPEND);
-            }
-
-
-
-            if ($_REQUEST['region_name'])
-            {
-               $anchor = $_REQUEST['region_name'];
-            }
-
-            if (!array_key_exists('hide_sql',$_REQUEST))
-            {
-               $sqlDisplay = "<br/><span style='font-size:10px'><strong>[$this->time_of_execution Seconds]</strong><pre style='overflow: auto;width: 400px;height:200px;'>$sql</pre></span><br/>";
-            }
-
-            $cnt=0;
-            $numrowscheck = $numrows;
-            if ($hideData == 0 || $exportCSVFlag == 1)
-            {
-               while ($row = mysql_fetch_assoc($results))
+               if($currentDatabaseCount == 1 && $queryType[$sql] == 'write' && $combineResultsFlag)
                {
-                  if ($cnt == 0)
+                  if (fwrite($handleAll, "SQL:,".str_replace(array("\n","\r",","),array('','','`'),$sql).",\r\nDatabase,Rows Updated\r\n") === FALSE)
                   {
-                     $headerIteration[$sql]++;
-                     $output .= ($hideData == 0)  ? "<td><h1>$numRowsHTML$sqlDisplay</h1><table border='1'>" : "";
-                     $numrowscheck = $numrows;
-                     $header = array_keys($row);
-                     if ($exportCSVFlag == 1)
-                     {
-                        if ($combineResultsFlag && $headerIteration[$sql] == 1)
-                        {
-                           file_put_contents($this->wd."archive/".md5($sql)."_all.csv",implode(",",array_merge(array('Database'),$header)).",\r\n",FILE_APPEND);
-                        }
-                        if ($separateData)
-                        {
-                           file_put_contents($this->wd."archive/".md5($sql)."_".$region.".csv",implode(",",$header).",\r\n",FILE_APPEND);
-                        }
-                     }
-                     $output .= ($hideData == 0)  ? "<th>".implode("</th><th>",$header)."</th>" : "";
+                     echo "Cannot write to file (ALL)";
+                     exit;
                   }
-
-
-
-                  if ($exportCSVFlag == 1)
-                  {
-                     if ($separateData)
-                     {
-                        file_put_contents($this->wd."archive/".md5($sql)."_".$region.".csv",implode(
-                        ",",
-                              str_replace(
-                              array(",","\t","\n","\r"),
-                              array(" "," ","",""),
-                              $row)
-                        ).",\r\n",FILE_APPEND);
-                     }
-                     if ($combineResultsFlag)
-                     {
-                        file_put_contents($this->wd."archive/".md5($sql)."_all.csv",implode(
-                        ",",
-                              str_replace(
-                              array(",","\t","\n","\r"),
-                              array(" "," ","",""),
-                              array_merge(array($region),$row))
-                        ).",\r\n",FILE_APPEND);
-                     }
-                  }
-
-
-
-                  if (is_array($_REQUEST['lookup_mapping_columns']))
-                  {
-                     foreach ($row as $k=>$v)
-                     {
-                        foreach($_REQUEST['lookup_mapping_columns'] as $colName=>$whereColumn)
-                        {
-                           if ($colName == $k)
-                           {
-                              if (stristr($v,','))
-                              {
-                                 $values = explode(',',$v);
-                                 $whereValue = " IN ('".implode("','",$values)."')";
-                              }
-                              else
-                              {
-                                 $whereValue = "= '$v'";
-                              }
-                              $row[$k] = str_replace(array('<!--NAME-->','<!--SQL-->'),array('<span style="color:green;">'.$v.'</span>',"SELECT * FROM {$_REQUEST['lookup_mapping_table'][$colName]} WHERE $whereColumn $whereValue"),$this->query_link_template);
-                           }
-                        }
-                     }
-                  }
-
-                  $preStart = '';
-                  $preEnd = '';
-
-                  if ($_REQUEST['use_pre'])
-                  {
-                     $preStart = '<pre style="overflow:auto;width:500px;">';
-                     $preEnd   = '</pre>';
-                     foreach ($row as $kRow=>$vRow)
-                     {
-                        $row[$kRow] = htmlentities($vRow);
-                     }
-                  }
-                  $output .= ($hideData == 0)  ? "<tr><td valign=\"top\" style=\"max-width:200px;word-wrap:break-word;\">$preStart".implode("$preEnd</td><td style=\"max-width:200px;word-wrap:break-word;\">$preStart",$row)."$preEnd</td>$specialShit</tr>" : "";
-                  $cnt++;
                }
 
 
-               if ($this->num_affected > 0 && $combineResultsFlag)
-               {
-                  file_put_contents($this->wd."archive/".md5($sql)."_all.csv","$region,$this->num_affected,\r\n",FILE_APPEND);
-               }
-            }
-
-            if ($exportCSVFlag == 1 && $cnt !== 0)
-            {
-               if ($isCountQuery && $numrows == '0')
-               {
-                  continue;
-               }
-               $allHashes[] = md5($sql);
 
                if ($_REQUEST['region_name'])
                {
-                  $datbaseName = $_REQUEST['region_name'];
+                  $anchor = $_REQUEST['region_name'];
                }
                else
                {
-                  $datbaseName = $this->current_database;
-               }
-
-               if ($separateData)
-               {
-                  $tmp = "";
-                  if ($hideData == 1)
-                  {
-                     $tmp .= "<h1>$datbaseName Records Exported (#$cnt Rows Total in <strong>[$this->time_of_execution Seconds]</strong>)</h1>";
-                  }
-                  $tmp .= "<a href=\"deploymentMaintenanceDownload.php?folder=archive/&f=".md5($sql)."_".$datbaseName.".csv\"><img style=\"width:80px;height:80px;\" src=\"images/csv.png\"/><br/>Download $datbaseName Results</a>";
-
-                  if ($hideData == 0)
-                  {
-                     $tmp .="</td></table>";
-                  }
-                  else
-                  {
-                     $tmp .="<br/><br/>";
-                  }
-
-                  $outputCSVHTML .= $tmp;
-                  $output .= $tmp;
-               }
-            }
-            else if ($exportCSVFlag == 1 && $cnt === 0)
-            {
-               $outputCSVHTML .= "</table></td>";
-               $output .=  "</table></td>";
-            }
-            else
-            {
-               $output .= "</table></td>";
-            }
-            foreach ($counts as $region=>$count)
-            {
-               if ($count != $numrowscheck && $hasShownAlert==false && $_REQUEST['show_count_difference'])
-               {
-                  if ($hideData == 1)
-                  {
-                     $countsOutput .= "<script>alert(\"WARNING: $region has $count when it should be $numrowscheck for $sql\")</script>";
-                  }
-                  else
-                  {
-                     $output .= "<script>alert(\"WARNING: $region has $count when it should be $numrowscheck for $sql\")</script>";
-                  }
-                  //echo "<script>alert(\"DIFFERENCE $sql $region -$count- -$numrowscheck-\")</script>";
-                  $hasShownAlert = true;
-               }
-            }
-
-            if ($currentDatabaseCount == $countAllDatabases)
-            {
-               foreach ($counts as $cnt)
-               {
-                  $allCnts += $cnt;
+                  $anchor = $region;
                }
 
                if (!array_key_exists('hide_sql',$_REQUEST))
                {
-                  $mainSQL = "<br/>$sql";
+                  $sqlDisplay = "<h3>$anchor</h3><br/><span style='font-size:10px'><strong>[$this->time_of_execution Seconds]</strong><pre style='overflow: auto;width: 400px;height:200px;'>$sql</pre></span><br/>";
                }
-               foreach($this->current_databases as $k=>$region)
+
+               $cnt=0;
+               $numrowscheck = $numrows;
+               if ($hideData == 0 || $exportCSVFlag == 1)
                {
-                  if (empty($region))
+                  while ($row = mysql_fetch_assoc($results))
+                  {
+                     $this->KeepAlive();
+                     if ($cnt == 0)
+                     {
+                        $headerIteration[$sql]++;
+                        $output .= ($hideData == 0)  ? "<td><h1>$numRowsHTML$sqlDisplay</h1><table border='1'>" : "";
+                        $numrowscheck = $numrows;
+                        $header = array_keys($row);
+                        if ($exportCSVFlag == 1)
+                        {
+                           if ($combineResultsFlag && $headerIteration[$sql] == 1)
+                           {
+                              if (fwrite($handleAll, implode(",",array_merge(array('Database'),$header)).",\r\n") === FALSE)
+                              {
+                                 echo "Cannot write to file (ALL)";
+                                 exit;
+                              }
+                           }
+
+                           if ($separateData)
+                           {
+                              if (fwrite($handleRegion, implode(",",$header).",\r\n") === FALSE)
+                              {
+                                 echo "Cannot write to file (REGION)";
+                                 exit;
+                              }
+                           }
+                        }
+                        $output .= ($hideData == 0)  ? "<th>".implode("</th><th>",$header)."</th>" : "";
+                     }
+
+
+
+                     if ($exportCSVFlag == 1)
+                     {
+                        if ($separateData)
+                        {
+                           if (fwrite($handleRegion, implode(
+                           ",",
+                                 str_replace(
+                                 array(",","\t","\n","\r"),
+                                 array(" "," ","",""),
+                                 $row)
+                           ).",\r\n") === FALSE)
+                           {
+                              echo "Cannot write to file (ALL)";
+                              exit;
+                           }
+                        }
+
+                        if ($combineResultsFlag)
+                        {
+                           if (fwrite($handleAll, implode(
+                           ",",
+                                 str_replace(
+                                 array(",","\t","\n","\r"),
+                                 array(" "," ","",""),
+                                 array_merge(array($region),$row))
+                           ).",\r\n") === FALSE)
+                           {
+                              echo "Cannot write to file (ALL)";
+                              exit;
+                           }
+
+                        }
+                     }
+
+
+
+                     if (is_array($_REQUEST['lookup_mapping_columns']))
+                     {
+                        foreach ($row as $k=>$v)
+                        {
+                           foreach($_REQUEST['lookup_mapping_columns'] as $colName=>$whereColumn)
+                           {
+                              if ($colName == $k)
+                              {
+                                 if (stristr($v,','))
+                                 {
+                                    $values = explode(',',$v);
+                                    $whereValue = " IN ('".implode("','",$values)."')";
+                                 }
+                                 else
+                                 {
+                                    $whereValue = "= '$v'";
+                                 }
+                                 $row[$k] = str_replace(array('<!--NAME-->','<!--SQL-->'),array('<span style="color:green;">'.$v.'</span>',"SELECT * FROM {$_REQUEST['lookup_mapping_table'][$colName]} WHERE $whereColumn $whereValue"),$this->query_link_template);
+                              }
+                           }
+                        }
+                     }
+
+                     $preStart = '';
+                     $preEnd = '';
+
+                     if ($_REQUEST['use_pre'])
+                     {
+                        $preStart = '<pre style="overflow:auto;width:500px;">';
+                        $preEnd   = '</pre>';
+                        foreach ($row as $kRow=>$vRow)
+                        {
+                           $row[$kRow] = htmlentities($vRow);
+                        }
+                     }
+                     $output .= ($hideData == 0)  ? "<tr><td valign=\"top\" style=\"max-width:200px;word-wrap:break-word;\">$preStart".implode("$preEnd</td><td style=\"max-width:200px;word-wrap:break-word;\">$preStart",$row)."$preEnd</td>$specialShit</tr>" : "";
+                     $cnt++;
+                  }
+
+
+                  if ($this->num_affected > 0 && $combineResultsFlag)
+                  {
+                     if (fwrite($handleAll, "$region,$this->num_affected,\r\n") === FALSE)
+                     {
+                        echo "Cannot write to file (ALL)";
+                        exit;
+                     }
+                  }
+               }
+
+               if ($exportCSVFlag == 1 && $cnt !== 0)
+               {
+                  if ($isCountQuery && $numrows == '0')
                   {
                      continue;
                   }
-                  if (!isset($regionsAll[$region]))
+                  $allHashes[] = md5($sql);
+
+                  if ($_REQUEST['region_name'])
                   {
-                     $regionsAll[$region] = $region;
+                     $datbaseName = $_REQUEST['region_name'];
+                  }
+                  else
+                  {
+                     $datbaseName = $this->current_database;
+                  }
+
+                  if ($separateData)
+                  {
+                     $tmp = "";
+                     if ($hideData == 1)
+                     {
+                        $tmp .= "<h1>$datbaseName Records Exported (#$cnt Rows Total in <strong>[$this->time_of_execution Seconds]</strong>)</h1>";
+                     }
+                     $tmp .= "<a href=\"deploymentMaintenanceDownload.php?folder=archive/&f=".md5($sql)."_".$datbaseName.".csv\"><img style=\"width:80px;height:80px;\" src=\"images/csv.png\"/><br/>Download $datbaseName Results</a>";
+
+                     if ($hideData == 0)
+                     {
+                        $tmp .="</td></table>";
+                     }
+                     else
+                     {
+                        $tmp .="<br/><br/>";
+                     }
+
+                     $outputCSVHTML .= $tmp;
+                     $output .= $tmp;
+                  }
+               }
+               else if ($exportCSVFlag == 1 && $cnt === 0)
+               {
+                  $outputCSVHTML .= "</table></td>";
+                  $output .=  "</table></td>";
+               }
+               else
+               {
+                  $output .= "</table></td>";
+               }
+               foreach ($counts as $region=>$count)
+               {
+                  if ($count != $numrowscheck && $hasShownAlert==false && $_REQUEST['show_count_difference'])
+                  {
+                     if ($hideData == 1)
+                     {
+                        $countsOutput .= "<script>alert(\"WARNING: $region has $count when it should be $numrowscheck for $sql\")</script>";
+                     }
+                     else
+                     {
+                        $output .= "<script>alert(\"WARNING: $region has $count when it should be $numrowscheck for $sql\")</script>";
+                     }
+                     //echo "<script>alert(\"DIFFERENCE $sql $region -$count- -$numrowscheck-\")</script>";
+                     $hasShownAlert = true;
                   }
                }
 
-               if (!$saveLinkShown)
+               if ($currentDatabaseCount == $countAllDatabases)
                {
-                  $countsOutput .= "<h3 style='color:yellow;'><a href=\"javascript: var comments = window.prompt('Any comments for this query?',''); if (comments != null) { var defaultTxt = comments; } else {var defaultTxt = 'Name';} var name = window.prompt('Enter A File Name.',defaultTxt); document.location = '?customQuery=1&saveHTML=$htmlFile.html&save_to=' + name + '&comments=' + comments;\">(Save To HTML)</a></h3>";
-                  $saveLinkShown = true;
-               }
+                  foreach ($counts as $cnt)
+                  {
+                     $allCnts += $cnt;
+                  }
 
-               $countsOutput .= "<h1>Counts For All</h1>";
-               $countsOutput .= "<pre>$mainSQL</pre><table border='1'>";
-               if ($combineResultsFlag)
-               {
-                  $countsOutput .= "<th>Download</th>";
+                  if (!array_key_exists('hide_sql',$_REQUEST))
+                  {
+                     $mainSQL = "<br/>$sql";
+                  }
+                  foreach($this->current_databases as $k=>$region)
+                  {
+                     if (empty($region))
+                     {
+                        continue;
+                     }
+                     if (!isset($regionsAll[$region]))
+                     {
+                        $regionsAll[$region] = $region;
+                     }
+                  }
+
+                  if (!$saveLinkShown)
+                  {
+                     $countsOutput .= "<h3 style='color:yellow;'><a href=\"javascript: var comments = window.prompt('Any comments for this query?',''); if (comments != null) { var defaultTxt = comments; } else {var defaultTxt = 'Name';} var name = window.prompt('Enter A File Name.',defaultTxt); document.location = '?customQuery=1&saveHTML=$htmlFile.html&save_to=' + name + '&comments=' + comments;\">(Save To HTML)</a></h3>";
+                     $saveLinkShown = true;
+                  }
+
+                  $countsOutput .= "<h1>Counts For All</h1>";
+                  $countsOutput .= "<pre>$mainSQL</pre><table border='1'>";
+                  if ($combineResultsFlag)
+                  {
+                     $countsOutput .= "<th>Download</th>";
+                  }
+                  $countsOutput  .= "<th>Total Counts</th><th>".implode("</th><th>",$regionsAll)."</th>";
+                  $countsOutput .= "<tr><!--ALL_DB".md5($sql)."--><td>$allCnts</td><td>".implode("</td><td>",$counts)."</td></tr>";
+                  $countsOutput .= "</table><br/>";
                }
-               $countsOutput  .= "<th>Total Counts</th><th>".implode("</th><th>",$regionsAll)."</th>";
-               $countsOutput .= "<tr><!--ALL_DB".md5($sql)."--><td>$allCnts</td><td>".implode("</td><td>",$counts)."</td></tr>";
-               $countsOutput .= "</table><br/>";
+            }
+
+            if ( $numrows > 0 || sizeof($sqls) > 1)
+            {
+               $output .= "</tr></table>";
             }
          }
 
-         if ( $numrows > 0 || sizeof($sqls) > 1)
+
+         fclose($handleAll);
+         if ($separateData)
          {
-            $output .= "</tr></table>";
+            fclose($handleRegion);
          }
+
       }
+
+      if ($cmdLine)
+      {
+         echo "<textarea style='width:98%;height:98%;'>";
+         echo $cmdLineScript;
+         echo "</textarea>";
+         exit;
+      }
+
       $output .= "</tr></table>";
       // -- log a row to the master server for what you did to the database if you have the tracking tables up
       foreach ($sqls as $sql)
@@ -1670,7 +1824,7 @@ class DeploymentMaintenance
          {
 
          }
-         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password']);
+         $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
          if (mysql_select_db($db,$this->server['mysql']['connection']) && !isset($_REQUEST['is_cron']))
          {
             if ($_GET['deploy'])
@@ -1818,7 +1972,7 @@ class DeploymentMaintenance
          switch ($type)
          {
             case 'mysql' :
-               $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password']);
+               $this->server['mysql']['connection'] = mysql_connect($vals['server'],$vals['username'],$vals['password'], true, $this->server['mysql']['client_flags']);
                if (!$this->server['mysql']['connection'])
                {
                   die('Cannot connect to mysql:'.$vals['server']);
@@ -1826,6 +1980,8 @@ class DeploymentMaintenance
                break;
          }
       }
+
+      $this->SetMySQLConnectionPreferences();
 
       if (!$this->client_paths)
       {
@@ -1904,7 +2060,7 @@ class DeploymentMaintenance
          // -- fetch file to string
          $deploymentFileContents = file_get_contents($this->deployment_file);
          // -- split into logical parts of queries delimited by ;; or declarations delimited by a \n#
-         $sqlParts = preg_split('/\n[\s]+\;\;|\n#/',$deploymentFileContents, -1, PREG_SPLIT_OFFSET_CAPTURE);
+         $sqlParts = preg_split('/\;\;|\n#/',$deploymentFileContents, -1, PREG_SPLIT_OFFSET_CAPTURE);
 
          if (is_array($sqlParts))
          {
@@ -1969,6 +2125,7 @@ class DeploymentMaintenance
 
                         break;
                   }
+                  $this->KeepAlive();
                }
             }
 
@@ -2126,8 +2283,10 @@ class DeploymentMaintenance
             $threshold=0;
             foreach ($revs as $deployLocation)
             {
+               $this->KeepAlive();
                foreach ($filesModified as $fileSvn)
                {
+                  $this->KeepAlive();
                   $fileOkay = false;
                   $fileSvn = trim($fileSvn);
                   if (stristr($fileSvn, ".") && (stristr($fileSvn,"M /") || stristr($fileSvn,"A /") || stristr($fileSvn,"D /") || stristr($fileSvn,"R /")))
@@ -2213,13 +2372,16 @@ class DeploymentMaintenance
                                  continue;
                               }
                            }
-                           if (!is_dir($this->wd.'peer_review/'.$deployLocation.'/'.$dirOfLocation))
+
+                           if (is_dir($this->wd.'peer_review/'.$deployLocation.'/'.$dirOfLocation))
                            {
-                              if (!mkdir($this->wd.'peer_review/'.$deployLocation.'/'.$dirOfLocation,0750,true))
-                              {
-                                 $emailBodySvn .= "<div style='color:red'>\"Dir creation failed before export to ".$this->wd.'peer_review/'.$dirOfLocation."\"</div><br/>";
-                                 continue;
-                              }
+                              system("rm -R '".$this->wd.'peer_review/'.$deployLocation.'/'.$dirOfLocation."'");
+                           }
+
+                           if (!mkdir($this->wd.'peer_review/'.$deployLocation.'/'.$dirOfLocation,0750,true))
+                           {
+                              $emailBodySvn .= "<div style='color:red'>\"Dir creation failed before export to ".$this->wd.'peer_review/'.$dirOfLocation."\"</div><br/>";
+                              continue;
                            }
 
                            $this->DeleteFile($this->wd."svndeploy/{$deployLocation}/{$newLocation}");
@@ -2260,7 +2422,8 @@ class DeploymentMaintenance
                                     $this->DeleteFile($this->wd."peer_review/".$deployLocation."/".$newLocation.".production");
                                     $this->FileLogger('cp '.$client.$newLocationSlash);
                                     $this->FileLogger('cp '.$this->wd."peer_review/".$deployLocation."/".$newLocation.".production");
-                                    copy($client.$newLocationSlash,$this->wd."peer_review/".$deployLocation."/".$newLocation.".production");
+
+                                    $ret = copy($client.$newLocationSlash,$this->wd."peer_review/".$deployLocation."/".$newLocation.".production");
 
                                     exec("printf \"".str_pad('',121,'=')."\\n|\\n|\\n|         Diff of ".$newLocation."\\n|\\n|\\n".str_pad('',121,'=')."\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\" >> '".$this->wd."svndeploy/{$this->release_hash}_diff.out' &&  echo '<a id=\"$newLocation\"></a><h1><a href=\"javascript:scroll(0,0)\">Back To Top</a></h1><h1>$newLocation</h1><pre>' >> '".$this->wd."svndeploy/{$this->release_hash}_diff.html'");
                                     exec("diff -bwc '".$this->wd."peer_review/".$deployLocation."/".$newLocation.".new' '".$this->wd."peer_review/".$deployLocation."/".$newLocation.".production' >> '".$this->wd."svndeploy/{$this->release_hash}_diff.out' >> '".$this->wd."svndeploy/{$this->release_hash}_diff.html'");
@@ -2429,7 +2592,7 @@ class DeploymentMaintenance
                                     $outputFinal .= $out[$threshold][] = str_replace("//","/","cp '".$this->wd."svndeploy/".$deployLocation."/".$newLocation."' '".$client.$newLocationSlash."' &&\n  chown ".$this->chown_user." '".$client.$newLocationSlash."' &&  chmod 755 '".$client.$newLocationSlash."' && \n echo '[$this->release_hash] - Copying ".$client.$newLocationSlash."' >> {$this->wd}debug.log    \n echo '[$this->release_hash] - Chowning ".$client.$newLocationSlash."' >> {$this->wd}debug.log  &&\n  \n echo '[$this->release_hash] - Chmoding ".$client.$newLocationSlash."' >> {$this->wd}debug.log &&");
                                     if (file_exists($client.$newLocationSlash))
                                     {
-                                       $outputFinalReverse .= "cp '".$this->wd."peer_review/".$deployLocation."/".$newLocation.".production"."' '".$client.$newLocationSlash."' &&\nchown ".$this->chown_user." '".$client.$newLocationSlash."' &&\n";
+                                       $outputFinalReverse .= "cp '".$this->wd."peer_review/".$deployLocation."/".$newLocation.".production"."' '".$client.$newLocationSlash."' ||\nchown ".$this->chown_user." '".$client.$newLocationSlash."' ||\n";
                                     }
                                  }
                                  else
@@ -2515,12 +2678,13 @@ class DeploymentMaintenance
                }
             }
 
-	    if ($this->tarball_peer_review)
-	    {
-	       @exec("tar -zcvf {$this->wd}peer_review/peer_review_{$this->peerReviewDeployLocation}.tar.gz .",$outputShell);
-	    }
+            if ($this->tarball_peer_review)
+            {
+               @exec("tar -zcvf {$this->wd}peer_review/peer_review_{$this->peerReviewDeployLocation}.tar.gz .",$outputShell);
+            }
+            $this->KeepAlive();
 
-	    $outputFinal .= $out[$threshold][] = str_replace("//","/","echo 'SVN Install Complete!' && php {$this->wd}deploymentMaintenanceComplete.php '{$_REQUEST['deploy']}' '{$_REQUEST['svnrev']}' 'Released' && ");
+            $outputFinal .= $out[$threshold][] = str_replace("//","/","echo 'SVN Install Complete!' && php {$this->wd}deploymentMaintenanceComplete.php '{$_REQUEST['deploy']}' '{$_REQUEST['svnrev']}' 'Released' && ");
             if ($this->debug_mode == 0)
             {
                $outputFinalReverse .= " echo 'SVN Reversion Complete!' && php {$this->wd}deploymentMaintenanceComplete.php '{$_REQUEST['deploy']}' '{$_REQUEST['svnrev']}' 'Reverted'";
@@ -2645,11 +2809,12 @@ class DeploymentMaintenance
                         <tr><td>Project Name:</td><td>".preg_replace( $findRegexp , $replaceRegexp ,$_REQUEST['project_name_hidden'])."</td></tr>
                         <tr><td>Project Status:</td><td>{$_REQUEST['project_status']}</td></tr>
                         <tr><td>Deploying to:</td><td>{$_REQUEST['deploy']}</td></tr>
+                        <tr><td>Regions Included:</td><td><div style='color:green'>-".implode("<BR/>-",$this->client_paths)."</div></td></tr>
                         $comment
                         $totals
                         <tr><td>Deploying Files:</td><td>$filesAffected</td></tr>
                      </table>
-                     exectute this command via root:<br/><div style='color:lime'>$filenameAll</div><br/><br/></div>revert command:<div style='color:red'>chmod u+x $filename2 && sh $filename2</div><br/><br/></div>compare command:<div style='color:lightblue'>chmod u+x {$filename2}diff.sh && sh {$filename2}diff.sh</div><br/><br/>Which will include ($count client paths):<br/><div style='color:green'>-".implode("<BR/>-",$this->client_paths)."</div><br/>
+                     exectute this command via root:<br/><div style='color:lime'>$filenameAll</div><br/><br/></div>revert command:<div style='color:red'>chmod u+x $filename2 && sh $filename2</div><br/><br/></div>compare command:<div style='color:lightblue'>chmod u+x {$filename2}diff.sh && sh {$filename2}diff.sh</div><br/><br/>Which will include ($count client paths):<br/><br/>
                   </td>
                   <td>
                      <!--FILES_INTERFACE-->
@@ -3010,8 +3175,10 @@ class DeploymentMaintenance
          }
       }
 
+      $url = parse_url($this->base_url);
       $email = new EmailSender( $body );
-      $email->set_from( 'deployment_maintenance@'.$_SERVER['HTTP_HOST']);
+      $email->set_from( 'deployment_maintenance@'.$url['host']);
+      $email->set_replyTo('deployment_maintenance@'.$url['host'],'deployment_maintenance@'.$url['host']);
       $email->set_content_type( 'text/html' );
       $email->set_to( $emails );
 
@@ -3070,7 +3237,7 @@ class DeploymentMaintenance
    function DatabaseProcessLine($lineInformation)
    {
       $lineInformation = trim($lineInformation);
-      if (strpos($lineInformation,'#') !== false)
+      /*if (strpos($lineInformation,'#') !== false)
       {
          // -- sometimes developer will not delimit each command with a ;; after a #DECLARATION, so a keyword can be mixed with a query and delimited by line endings.  This will split those lines accordingly so that both records are valid still
          $beginingSQLKeywords = array('truncate ','drop ','insert ','delete ','update ','use ','alter ','create ','call ');
@@ -3084,9 +3251,9 @@ class DeploymentMaintenance
          return array($lineInformation);
       }
       else
-      {
+      {*/
          return array($lineInformation);
-      }
+      /*}*/
    }
 
    /*
@@ -3337,23 +3504,16 @@ class DeploymentMaintenance
    function isValidQuery($line)
    {
       $flag = false;
-      if (stristr($line,'insert') !== false  || stristr($line,'drop') !== false || stristr($line,'update') !== false || stristr($line,'delete') !== false)
+      if (stristr($line,'insert') !== false  || stristr($line,'drop') !== false || stristr($line,'update') !== false || stristr($line,'delete') !== false || stristr($line,'create') !== false || stristr($line,'call') !== false || stristr($line,'truncate') !== false || stristr($line,'alter') !== false || stristr($line,'use') !== false)
       {
          $flag = true;
-      }
-
-      if ($this->current_db_type == 'mysql')
-      {
-         if (stristr($line,'create') !== false || stristr($line,'call') !== false || stristr($line,'truncate') !== false || stristr($line,'alter') !== false || stristr($line,'use') !== false)
-         {
-            $flag = true;
-         }
       }
 
       if ($flag === true)
       {
          $this->all_queries[] = $line;
       }
+
       if ($this->current_db_type == '' && $flag === true)
       {
          $this->descriptive_log[] = "Logical error in file:  Attempted to run a query without first specifying a db_type".$this->ln().$this->ln()."\t\t\tQUERY:$line".$this->ln().$this->ln();
@@ -3487,7 +3647,7 @@ class DeploymentMaintenance
          case 'mysql':
             if (!$this->server['mysql']['connection'])
             {
-               $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password']);
+               $this->server['mysql']['connection'] = mysql_connect($this->server['mysql']['server'],$this->server['mysql']['username'],$this->server['mysql']['password'], true, $this->server['mysql']['client_flags']);
             }
             $this->database_error = null;
             if (!mysql_select_db($this->current_database,$this->server['mysql']['connection']))
@@ -3540,7 +3700,8 @@ class DeploymentMaintenance
          $this->descriptive_log[] = $this->ln()."\t\t\t\t(".$this->current_db_type.") (SUCCESS)".$this->ln();
          $this->affected_html = "";
          $this->num_affected = 0;
-         if (stripos($this->current_query,'insert') !== false || stripos($this->current_query,'drop') !== false || stripos($this->current_query,'update') !== false || stripos($this->current_query,'delete') !== false || stripos($this->current_query,'alter') !== false)
+         $affected = mysql_affected_rows($this->server['mysql']['connection']);
+         if ($this->isWritableQuery($this->current_query))
          {
             $aff = mysql_affected_rows($this->server['mysql']['connection']);
             $this->affected_html = '<span style="color:grey">('.$aff.' affected)</span>';
@@ -3748,7 +3909,7 @@ class DeploymentMaintenance
 
                if (!isset($output[$fileInfo]))
                {
-                  if ($compareBlocksOfCode)
+                  if ($this->compare_blocks_of_code && $compareBlocksOfCode)
                   {
                      $affectedFiles[$fileInfo]['total_blocks_new'] = 0;
                      $affectedFiles[$fileInfo]['total_blocks'] = 0;
@@ -4182,6 +4343,7 @@ class EmailSender
       $this->img_parts_keys        = array();
       $this->boundary              = "______MIME_BOUNDARY______";
       $this->from                  = $from;
+      list($void, $this->from_domain) = explode("@",$this->from);
       $this->subject               = $subject;
       $this->replyTo               = $replyTo;
       $this->from_name             = null;
@@ -4399,6 +4561,8 @@ class EmailSender
          $from = 'nobody@'.$_SERVER['HTTP_HOST'];
       }
       $this->from = $from;
+      list($void, $this->from_domain) = explode("@",$from);
+
       if ( $from_name )
       {
          $this->from_name = $from_name;
@@ -4494,7 +4658,7 @@ class EmailSender
 
       $headers .= "Reply-To: \"".$this->replyTo_name."\" <".$this->replyTo.">\n";
       $headers .= "Date: " . date('r') . "\n";
-      $headers .= "Message-ID: <" . $this->email_id . ">\n";
+      $headers .= "Message-ID: <" . $this->email_id . '@' . $this->from_domain . ">\n";
       if(false !== $this->threshhold_handling)
       { //only if we are doing detection
 
@@ -4542,7 +4706,88 @@ class EmailSender
       {
          $template = str_replace("<".$tag.">", $data, $template);
       }
-      return $template;
+      $this->LE = "\n";
+
+      return $this->WrapText($template,72,false);
+   }
+
+   function FixEOL($str)
+   {
+     $str = str_replace("\r\n", "\n", $str);
+     $str = str_replace("\r", "\n", $str);
+     return $str;
+   }
+
+   function WrapText($message, $length, $qp_mode = false)
+   {
+      $soft_break = ($qp_mode) ? sprintf(" =%s", $this->LE) : $this->LE;
+
+      $message = $this->FixEOL($message);
+      if (substr($message, -1) == $this->LE)
+      $message = substr($message, 0, -1);
+
+      $line = explode($this->LE, $message);
+      $message = "";
+      for ($i=0 ;$i < count($line); $i++)
+      {
+        $line_part = explode(" ", $line[$i]);
+        $buf = "";
+        for ($e = 0; $e<count($line_part); $e++)
+        {
+          $word = $line_part[$e];
+          if ($qp_mode and (strlen($word) > $length))
+          {
+             $space_left = $length - strlen($buf) - 1;
+             if ($e != 0)
+             {
+                if ($space_left > 20)
+                {
+                   $len = $space_left;
+                   if (substr($word, $len - 1, 1) == "=")
+                   $len--;
+                   elseif (substr($word, $len - 2, 1) == "=")
+                   $len -= 2;
+                   $part = substr($word, 0, $len);
+                   $word = substr($word, $len);
+                   $buf .= " " . $part;
+                   $message .= $buf . sprintf("=%s", $this->LE);
+                }
+                else
+                {
+                   $message .= $buf . $soft_break;
+                }
+                $buf = "";
+              }
+              while (strlen($word) > 0)
+              {
+                 $len = $length;
+                 if (substr($word, $len - 1, 1) == "=")
+                 $len--;
+                 elseif (substr($word, $len - 2, 1) == "=")
+                 $len -= 2;
+                 $part = substr($word, 0, $len);
+                 $word = substr($word, $len);
+
+                 if (strlen($word) > 0)
+                 $message .= $part . sprintf("=%s", $this->LE);
+                 else
+                 $buf = $part;
+              }
+           }
+           else
+           {
+              $buf_o = $buf;
+              $buf .= ($e == 0) ? $word : (" " . $word);
+              if (strlen($buf) > $length and $buf_o != "")
+              {
+                 $message .= $buf_o . $soft_break;
+                 $buf = $word;
+              }
+            }
+         }
+         $message .= $buf . $this->LE;
+      }
+      return $message;
    }
 
    function getFileData($filename)
@@ -4884,7 +5129,18 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
          $randomRegion  = array_keys($dataObj->client_deployment_regions['ALL']);
          $randomRegionId = $randomRegion[0];
 
-         $dataObj->query_link_url = $dataObj->base_url.'?region_name='.$dataObj->maintenance_database.'&hide_sql=1&deploy=CUSTOM&customRegions[]='.$randomRegionId.'&hideData=&exportCSV=on&customQuery=<!--SQL-->';
+         $dataObj->query_link_url = $dataObj->base_url.'?region_name='.$dataObj->maintenance_database.'&hide_sql=1&<!--REGIONS-->&hideData=&exportCSV=on&customQuery=<!--SQL-->';
+         if (!$dataObj->is_cron)
+         {
+            $dataObj->query_link_url = str_replace(array('<!--REGIONS-->'),array('deploy=CUSTOM&customRegions[]='.$randomRegionId),$dataObj->query_link_url);
+            $this->FileLogger('is NOT cron area '.__LINE__);
+            $this->FileLogger($dataObj->query_link_url);
+         }
+         else
+         {
+            $this->FileLogger('is cron area '.__LINE__);
+            $this->FileLogger($dataObj->query_link_url);
+         }
 
          $dataObj->query_link_template = '<a style="cursor:pointer" onclick="document.location = \''.$dataObj->query_link_url.'\';" href="'.$dataObj->query_link_url.'"><!--NAME--></a>';
 
@@ -5547,7 +5803,7 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                                     <table>
                                     <tr>
                                        <td>Run In:</td><td>
-                                       <select name="deploy" id="deploy" onkeydown=\'this.onchange();\' onkeyup=\'this.onchange();$("mainForm").method= "POST";\' onchange="
+                                       <select name="deploy" id="deploy" onfocus=\"this.onchange()\" onkeydown=\'this.onchange();\' onkeyup=\'this.onchange();$("mainForm").method= "POST";\' onchange="
                                        if (this.value == \'ALL\' || this.value == \'PRODUCTION\')
                                        {
                                           $(\'customRegions\').style.display = \'none\';
@@ -5616,6 +5872,20 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                                                 </td>
                                                 <td>
                                                    <span>Post Via $_GET<input type=\'checkbox\' onchange=\'$("mainForm").method = "GET";\'/>
+                                                </td>
+                                                <td>
+
+                                                </td>
+                                             </tr>
+                                             <tr>
+                                                <td>
+                                                   <span>Create CMD Line Script:<input type=\'checkbox\' name=\'cmdLine\' id=\'cmdLine\'/>
+                                                </td>
+                                                <td>
+
+                                                </td>
+                                                <td>
+
                                                 </td>
                                                 <td>
 
@@ -5711,7 +5981,16 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                                        {
                                           $separateDataFlag = 1;
                                        }
-                                       list($void,$void,$output) = $dataObj->queryDeploymentRegions($sql,$hideDataFlag,$exportCSVFlag,1,$separateDataFlag);
+                                       $cmdLine = $_REQUEST['cmdLine'];
+                                       if ($cmdLine == null)
+                                       {
+                                          $cmdLine = 0;
+                                       }
+                                       else
+                                       {
+                                          $cmdLine = 1;
+                                       }
+                                       list($void,$void,$output) = $dataObj->queryDeploymentRegions($sql,$hideDataFlag,$exportCSVFlag,1,$separateDataFlag,$cmdLine);
                                        $maintenanceForm .= $output;
                                     }
                                     else
@@ -5775,6 +6054,7 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                               }
                               $email = new EmailSender( "Attached is your Data Maintenance SQL File\n\n$finalQueries");
                               $email->set_from( "deployment_maintenance@".$_SERVER['HTTP_HOST'] );
+                              $email->set_replyTo( "deployment_maintenance@".$_SERVER['HTTP_HOST'],"deployment_maintenance@".$_SERVER['HTTP_HOST'] );
                               $email->set_content_type( 'text' );
                               $email->add_attachment( basename($filename), $filename ,'text/plain');
                               if (stristr($_REQUEST['emails'],",") !== false)
@@ -5843,7 +6123,7 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                            $maintenanceForm .= "<tr><td>Backup before:</td><td>
                            <select id='databases' multiple name='databases[]' size='10' style='display:none;'><option value=''>Select some tables to backup</option>";
 
-                           $link = mysql_connect($dataObj->server['mysql']['server'],$dataObj->server['mysql']['username'],$dataObj->server['mysql']['password']);
+                           $link = mysql_connect($dataObj->server['mysql']['server'],$dataObj->server['mysql']['username'],$dataObj->server['mysql']['password'], true, $dataObj->server['mysql']['client_flags']);
                            $results = mysql_list_dbs($link);
                            while($row = mysql_fetch_array($results))
                            {
@@ -5879,14 +6159,14 @@ class DeploymentMaintenanceWebForm extends DeploymentMaintenance
                               </form>
                                     ";
 
-                           $sqlCacheHTML = '
-                              <td width="30%" id="svnfiles_area" style="padding-top: 162px;">
-                                 <div id="demo1" class="demo" style="display:none;">
-                                    '.$sqlCache.'
-                                 </div>
-                              </td>';
-
                         }
+
+                        $sqlCacheHTML = '
+                           <td width="30%" id="svnfiles_area" style="padding-top: 162px;">
+                              <div id="demo1" class="demo" style="display:none;">
+                                 '.$sqlCache.'
+                              </div>
+                           </td>';
 
                         if (array_key_exists('username', $_SESSION))
                         {

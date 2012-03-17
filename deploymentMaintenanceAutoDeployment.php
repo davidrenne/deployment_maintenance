@@ -1,5 +1,6 @@
 <?php
-// -- run cron every 1 minute and let this script check each second and then exit
+// -- run cron every 1 minute and let this script check each second and then exit - add the below in your crontab to execute every minute
+// -- */1 * * * * php /yourpath/deploymentMaintenanceAutoDeployment.php
 set_time_limit(0);
 ob_start();
 require(dirname(__FILE__)."/index.php");
@@ -7,7 +8,7 @@ $autoDeployShell = dirname(__FILE__).'/svndeploy/auto_deploy.sh';
 $autoDeployShell2 = dirname(__FILE__).'/svndeploy/auto_deoploy_is_running.sh';
 $hourOfDay    = date('H');
 $topOfTheHour = (date('i') == '00');
-
+$dataObj->is_cron   = true;
 $executeShellDeploy = true;
 
 // -- debug mode
@@ -20,6 +21,10 @@ if ($executeShellDeploy)
 {
    for($i=1;$i<60;$i++)
    {
+      // -- CronHooks.php is just a custom cron to fire off various tasks you need to execute every second
+      //
+      require(dirname(__FILE__)."/deploymentMaintenanceCronHooks.php");
+
       if (file_exists($autoDeployShell) && !file_exists($autoDeployShell2))
       {
          file_put_contents($autoDeployShell2,'Running...');
@@ -219,15 +224,23 @@ if ($topOfTheHour || !$executeShellDeploy)
 
          $dataObj->sendToMaster = false;
 
+         // -- hacks below: for customized data monitor times
+         //
          if (in_array($monitorRow['id'],array(34808, 35962, 36036)))
          {
-            if ($hourOfDay == 4 || $hourOfDay == 5)
+            if ($hourOfDay != 22)
             {
                continue;
             }
-            // -- slave data not 100% matching master.
+            // -- slave data not 100% matching master.  control which requests fall into which hour or which server to send to
             $dataObj->sendToMaster = true;
          }
+
+         if (in_array($monitorRow['id'],array(38710)))
+         {
+            continue;
+         }
+
          list($countAll,$countsByRegion) = $dataObj->queryDeploymentRegions($theQuery,1,1,1);
          $countsByRegion2 = array();
          switch ($monitorRow['deployment_cron_count_check'])
@@ -244,19 +257,25 @@ if ($topOfTheHour || !$executeShellDeploy)
                         $countsByRegion2[$regionId] = $regionId." ($cnt)";
                      }
                   }
-                  $newSQL = $dataObj->DisableCountCheckMonitor($monitorRow['id']);
+
+
+                  // -- In your config, you have the ability to run a monitor and then disable, or just always keep active
+                  // -- if you wish to NOT disable monitors, it is best to just run queries with SQL (t_stamp BETWEEN DATE_ADD(CURRENT_TIMESTAMP,  interval -65 minute) AND CURRENT_TIMESTAMP  - INTERVAL 5 minute)
+                  if ($dataObj->monitor_disable)
+                  {
+                     $newSQL = $dataObj->DisableCountCheckMonitor($monitorRow['id']);
+                     $msg = "It is very important to Re-Enable Run This Update after you fix any data: <strong>$newSQL</strong>";
+                  }
                   $dataObj->DeploymentNotify(
                      $dataObj->web_notify['developers'],
                      "{$monitorRow['deployment_username']}'s DeploymentMaintenance SQL Monitor: Found ($countAll) Rows",
                      "
-                     DeploymentMaintenance found ($countAll) Rows in <strong>".implode(",",$countsByRegion2)."</strong><br /><br /> When Running the following Query #{$monitorRow['id']}:<br/>
-                     Developer Description:<pre>{$monitorRow['deployment_message']}</pre>
-                     Very important to Re-Enable Run This Update after you fix any data: <strong>$newSQL</strong>
+                     DeploymentMaintenance found ($countAll) Rows in <strong>".implode(",",$countsByRegion2)."</strong><br /><br /> When Running the following Query #{$monitorRow['id']}:<br/><br/>
+                     Developer Description:\"<strong>{$monitorRow['deployment_message']}</strong>\"<br/><br/>
+                     $msg
                      <hr>
                      <br/>
-                     <pre>
-                        $theQuery
-                     </pre>
+                        ".str_replace(array('<!--NAME-->','<!--SQL-->','<!--REGIONS-->'),array('<pre>'.$theQuery.'</pre>',urlencode($theQuery),'deploy='.$monitorRow['deployment_type']),$dataObj->query_link_template)."
                      <hr>
                      <br/>
                      This query runs at the top of the hour and was created by {$monitorRow['deployment_username']} on {$monitorRow['deployment_time']}.

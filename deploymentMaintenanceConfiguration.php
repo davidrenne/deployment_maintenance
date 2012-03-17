@@ -1,11 +1,35 @@
 <?php
-
 // -- set database that contains the deployment_maintenance table
+define('CLIENT_LONG_PASSWORD',1);         /* new more secure passwords */
+define('CLIENT_FOUND_ROWS',2);            /* Found instead of affected rows */
+define('CLIENT_LONG_FLAG',4);             /* Get all column flags */
+define('CLIENT_CONNECT_WITH_DB',8);       /* One can specify db on connect */
+define('CLIENT_NO_SCHEMA',16);            /* Don't allow database.table.column */
+define('CLIENT_COMPRESS',32);             /* Can use compression protocol */
+define('CLIENT_ODBC',64);                 /* Odbc client */
+define('CLIENT_LOCAL_FILES',128);         /* Can use LOAD DATA LOCAL */
+define('CLIENT_IGNORE_SPACE',256);        /* Ignore spaces before '(' */
+define('CLIENT_PROTOCOL_41',512);         /* New 4.1 protocol */
+define('CLIENT_INTERACTIVE',1024);        /* This is an interactive client */
+define('CLIENT_SSL',2048);                /* Switch to SSL after handshake */
+define('CLIENT_IGNORE_SIGPIPE',4096);     /* IGNORE sigpipes */
+define('CLIENT_TRANSACTIONS',8192);       /* Client knows about transactions */
+define('CLIENT_RESERVED',16384);          /* Old flag for 4.1 protocol */
+define('CLIENT_SECURE_CONNECTION',32768); /* New 4.1 authentication */
+define('CLIENT_MULTI_STATEMENTS',65536);  /* Enable/disable multi-stmt support */
+define('CLIENT_MULTI_RESULTS',131072);    /* Enable/disable multi-results */
 $dataObj = new DeploymentMaintenance();
-$dataObj->base_url                     = "http://yourserver.com/deployment_maintenance/index.php";
-$dataObj->server['mysql']['server']    = "main_db_server_name";
-$dataObj->server['mysql']['username']  = "username";
-$dataObj->server['mysql']['password']  = "password";
+$dataObj->base_url                        = "http://yourserver.com/deployment_maintenance/index.php";
+$dataObj->server['mysql']['server']       = "main_db_server_name";
+$dataObj->server['mysql']['username']     = "username";
+$dataObj->server['mysql']['password']     = "password";
+$dataObj->server['mysql']['client_flags'] = CLIENT_FOUND_ROWS + CLIENT_MULTI_STATEMENTS + CLIENT_MULTI_RESULTS;
+
+// -- large group concat support configuration
+$dataObj->mysql_session_preferences[] = 'group_concat_max_len=4294967295';
+$dataObj->mysql_session_preferences[] = 'max_allowed_packet=1073741824';
+// -- low priority updates dont seem to work right in this script.  USE Create CMD Line Script checkbox, it will create an inline SQL script with this directive with all your associated regions you have selected.
+$dataObj->mysql_session_preferences[] = 'low_priority_updates=1';
 
 // -- block anyone from ever sending up the same file twice.
 $dataObj->allow_same_file_to_region_twice = false;
@@ -136,6 +160,9 @@ $dataObj->view_names           = array(
 // -- when page loads which region is selected first
 $dataObj->default_region        = 'INTEGRATION';
 
+// -- if the web server is using fast CGI with -flush enabled.  this will keep it alive so HTML is always shown on long running processes
+$dataObj->is_fast_cgi = false;
+
 // -- if your project/checkins begin with a number a regex will link to your ticketing system
 // -- example project name/checkin would be "743 - My Project Message".  This would pass http://google.com/?project_id=743 and store 743 as the project for all releases in deployment_maintenance_clients_updates
 $dataObj->ticketing_system_url  = 'http://google.com/?project_id=';
@@ -172,5 +199,20 @@ $dataObj->menu_queries         = array(
 $dataObj->predefined_queries  = array(
                                        "XXXXXXX"=>"SELECT * FROM XXXXXXX WHERE XXXXXXX IN (<!--INPUT-->)",
                                      );
+// -- routing rules will change the connection when you read from these tables when any query contains these, your connection will go to the appropriate server
+
+$dataObj->routing_rules['master'] = array('my_master_only_mysql_table');
+$dataObj->routing_rules['slave']  = array('my_slave_only_mysql_table');
+
+// -- if you wish to shut down count check monitors after each email event set to true.
+$dataObj->monitor_disable  = false;
+
+// -- for project/checkin messages.  If you put !! or any other keyword.  The release will not be emailed to anyone.
+$dataObj->release_email_skip_string  = '!!';
+
+// -- for a little extra time/CPU deploymentMaintenance will compare blocks of your code by project/checkin and tag blocks of code with the project
+$dataObj->compare_blocks_of_code  = true;
+
+
 $dataObj->configure();
 ?>
